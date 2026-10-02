@@ -492,22 +492,55 @@ func (e *Engine) patchIdentity(target snapshot) error {
 func sameAccountFields(a, b snapshot) bool {
 	return equalJSON(a.OAuth, b.OAuth) && equalJSON(a.Trusted, b.Trusted) && equalJSON(a.Identity, b.Identity)
 }
+
+// A same-name reauthentication must finish the newly acquired generation.
+// Rolling back would allow the next save to discard its working refresh token.
+func (j journal) relogin() bool {
+	if j.ActiveBefore == "" || j.ActiveBefore != j.ActiveAfter || checkName(j.ActiveBefore) != nil {
+		return false
+	}
+	before, err := j.Before.key()
+	if err != nil {
+		return false
+	}
+	after, err := j.After.key()
+	return err == nil && before == after
+}
 func (e *Engine) transition(s state, current, name string, before, target snapshot) error {
+	j := journal{Version: 1, Before: before, After: target, ActiveBefore: current, ActiveAfter: name}
+	refreshing := j.relogin()
+	pending := errors.New("refreshed login activation is pending; close Claude and run claude-accounts recover")
+	// Keep the acquired generation durable even if the final idle check fails.
+	if refreshing {
+		if err := e.writeJSON(e.journalPath(), j); err != nil {
+			return err
+		}
+	}
 	// Recheck immediately before durable intent: another process may have changed
 	// the live login while we were preparing. The tool lock cannot lock Claude.
 	if err := e.CheckIdle(); err != nil {
+		if refreshing {
+			return pending
+		}
 		return err
 	}
 	now, err := e.capture()
 	if err != nil {
+		if refreshing {
+			return pending
+		}
 		return err
 	}
 	if !sameAccountFields(now, before) {
+		if refreshing {
+			return pending
+		}
 		return errors.New("live account changed during preparation; nothing was switched")
 	}
-	j := journal{Version: 1, Before: before, After: target, ActiveBefore: current, ActiveAfter: name}
-	if err = e.writeJSON(e.journalPath(), j); err != nil {
-		return err
+	if !refreshing {
+		if err = e.writeJSON(e.journalPath(), j); err != nil {
+			return err
+		}
 	}
 	if err = e.patchCredentials(target); err == nil {
 		err = e.patchIdentity(target)
@@ -518,6 +551,9 @@ func (e *Engine) transition(s state, current, name string, before, target snapsh
 		err = e.writeJSON(e.statePath(), s)
 	}
 	if err != nil {
+		if refreshing {
+			return pending
+		}
 		if rollback := e.rollback(j); rollback != nil {
 			return errors.New("switch failed and rollback is incomplete; close Claude and run claude-accounts recover")
 		}
@@ -532,6 +568,12 @@ func allowedField(live, before, after json.RawMessage) bool {
 	return equalJSON(live, before) || equalJSON(live, after)
 }
 func (e *Engine) rollback(j journal) error {
+	finishRelogin := j.relogin()
+	if finishRelogin {
+		// Native reconciliation restores its first argument. Swap generations
+		// so both native and file stores complete the refreshed login safely.
+		j.Before, j.After = j.After, j.Before
+	}
 	// Native stores may have two partially committed backends after a crash.
 	// Validate identity before asking the adapter to reconcile the journal's
 	// known credential generations; never overwrite an external newer login.
@@ -572,6 +614,9 @@ func (e *Engine) rollback(j journal) error {
 		return err
 	}
 	s.Active = j.ActiveBefore
+	if finishRelogin {
+		s.Accounts[j.ActiveBefore] = j.Before
+	}
 	if err = e.writeJSON(e.statePath(), s); err != nil {
 		return err
 	}
@@ -611,6 +656,9 @@ func (e *Engine) Recover() error {
 		decoder := json.NewDecoder(bytes.NewReader(b))
 		decoder.DisallowUnknownFields()
 		if decoder.Decode(&j) != nil || j.Version != 1 || (!j.Before.empty() && j.Before.validate() != nil) || j.After.validate() != nil {
+			return invalid
+		}
+		if j.ActiveBefore != "" && j.ActiveBefore == j.ActiveAfter && !j.relogin() {
 			return invalid
 		}
 		return e.rollback(j)
@@ -712,9 +760,13 @@ func (e *Engine) Login(name string) error {
 			}
 		}
 		// Save the successfully obtained login durably before touching live state.
-		s.Accounts[name] = target
-		if err = e.writeJSON(e.statePath(), s); err != nil {
-			return err
+		// Same-name relogin uses the journal as its durable save until activation
+		// completes; an old live generation must not overwrite the new one.
+		if current != name {
+			s.Accounts[name] = target
+			if err = e.writeJSON(e.statePath(), s); err != nil {
+				return err
+			}
 		}
 		if err = e.transition(s, current, name, before, target); err != nil {
 			return err
