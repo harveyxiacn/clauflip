@@ -51,6 +51,7 @@ jobs:
           suffix=''
           if [ "$GOOS" = windows ]; then suffix='.exe'; fi
           go build -trimpath -ldflags='-s -w' -o "dist/clauflip-$GOOS-$GOARCH$suffix" ./cmd/clauflip
+          cp LICENSE THIRD_PARTY_LICENSES.txt dist/
       - uses: actions/upload-artifact@v7
         with:
           name: clauflip-${{ matrix.target.goos }}-${{ matrix.goarch }}

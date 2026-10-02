@@ -53,6 +53,7 @@ func isolatedKeychainFixture(t *testing.T, s *keychainStore) {
 		t.Fatal("fake Keychain unlock failed", err)
 	}
 	s.testKeychain = path
+	s.p.StateDir = t.TempDir()
 	s.testSeed = func() error {
 		// Exercise a modern explicit Apple partition with a known fake password.
 		cmd := exec.Command("/usr/bin/security", "set-generic-password-partition-list", "-a", s.p.KeychainAccount, "-s", s.p.KeychainService, "-S", "apple-tool:,apple:", "-k", password, path)
@@ -103,9 +104,17 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	if err := s.Write(small); err != nil {
 		t.Fatal(err)
 	}
+	originalACL, err := nativeKeychainSnapshot(s.p.KeychainService, s.p.KeychainAccount, s.testKeychain)
+	if err != nil {
+		t.Fatal("cannot snapshot fixture partitions", err)
+	}
 	b := []byte(`{"claudeAiOauth":{"accessToken":"fixture"},"mcpOAuth":{"fixture":"` + strings.Repeat("x", 15000) + `"}}`)
 	if err := s.Write(b); err != nil {
 		t.Fatal(err)
+	}
+	preservedACL, err := nativeKeychainSnapshot(s.p.KeychainService, s.p.KeychainAccount, s.testKeychain)
+	if err != nil || !bytes.Equal(originalACL, preservedACL) {
+		t.Fatal("partition policy changed across data update", err)
 	}
 	got, err := s.Read()
 	if err != nil {
@@ -113,6 +122,29 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(got, b) {
 		t.Fatal("large credential round trip differs")
+	}
+	// Commit payload without restoring partitions to reproduce the crash window.
+	crashPayload := []byte(`{"claudeAiOauth":{"accessToken":"after-interruption"}}`)
+	if err := s.beginACLUpdate(crashPayload); err != nil {
+		t.Fatal(err)
+	}
+	if err := nativeKeychainFixtureInterruptedWrite(s.p.KeychainService, s.p.KeychainAccount, s.testKeychain, crashPayload); err != nil {
+		t.Fatal(err)
+	}
+	restarted := &keychainStore{p: s.p, testKeychain: s.testKeychain}
+	recovered, err := restarted.Read()
+	if err != nil || !bytes.Equal(recovered, crashPayload) {
+		t.Fatal("new store could not recover interrupted native mutation", err)
+	}
+	recoveredACL, err := nativeKeychainSnapshot(s.p.KeychainService, s.p.KeychainAccount, s.testKeychain)
+	if err != nil || !bytes.Equal(originalACL, recoveredACL) {
+		t.Fatal("interrupted write recovery lost original partition policy", err)
+	}
+	if _, err := os.Lstat(s.aclPath()); !os.IsNotExist(err) {
+		t.Fatal("completed native ACL recovery journal remains", err)
+	}
+	if err := s.Write(b); err != nil {
+		t.Fatal(err)
 	}
 	fallback := []byte(`{"claudeAiOauth":{"accessToken":"fixture"},"mcpOAuth":{"fileOnly":"preserve"}}`)
 	if err := os.WriteFile(s.p.CredentialFile, fallback, 0600); err != nil {

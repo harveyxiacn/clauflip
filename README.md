@@ -14,7 +14,7 @@ go build -buildvcs=false -o clauflip ./cmd/clauflip
 go build -buildvcs=false -o clauflip.exe ./cmd/clauflip
 ```
 
-macOS 源码构建需要 Xcode Command Line Tools，并启用 CGO（本机构建默认启用）。下载的二进制无需安装 Go。访问已有钥匙串项目可能需要解锁；大凭据切换还可能弹出系统授权窗口，要求确认钥匙串权限。
+macOS 源码构建需要 Xcode Command Line Tools，并启用 CGO（本机构建默认启用）。下载的二进制无需安装 Go。访问已有钥匙串项目可能需要解锁；切换时还可能弹出系统授权窗口，要求确认钥匙串权限。
 
 已有个人账户登录时，先退出 Claude Code，再执行：
 

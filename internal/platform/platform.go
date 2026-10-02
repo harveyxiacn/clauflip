@@ -206,6 +206,7 @@ type keychainStore struct {
 	p            Paths
 	testKeychain string // Empty in production; integration fixtures bind an isolated Keychain.
 	testSeed     func() error
+	testACL      *keychainACLIO // Pure Go fixtures; nil in production.
 }
 
 func (s *keychainStore) keychainRead() ([]byte, error) {
@@ -237,7 +238,10 @@ func accountFields(b []byte) ([]byte, error) {
 	return json.Marshal(map[string]any{"claudeAiOauth": d["claudeAiOauth"], "trustedDeviceToken": d["trustedDeviceToken"]})
 }
 func (s *keychainStore) Read() ([]byte, error) {
-	key, ke := s.keychainRead()
+	if err := s.recoverPendingACL(); err != nil {
+		return nil, err
+	}
+	key, ke := s.aclIO().securityRead()
 	file, fe := (&fileStore{s.p.CredentialFile}).Read()
 	if ke != nil && !errors.Is(ke, os.ErrNotExist) {
 		return nil, ke
@@ -278,7 +282,7 @@ func (s *keychainStore) Write(b []byte) error {
 	if _, err := s.Read(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	previous, previousErr := s.keychainRead()
+	previous, previousErr := s.aclIO().securityRead()
 	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
 		return previousErr
 	}
@@ -331,25 +335,22 @@ func (s *keychainStore) Write(b []byte) error {
 }
 
 func (s *keychainStore) writeKeychain(b []byte) error {
+	if err := s.recoverPendingACL(); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	lineLength := len("add-generic-password -U -a ") + len(securityQuote(s.p.KeychainAccount)) + len(" -s ") + len(securityQuote(s.p.KeychainService)) + len(" -X ") + hex.EncodedLen(len(b)) + 1
-	if lineLength <= 4032 {
-		c := securityWriteCommand(ctx, s.p.KeychainService, s.p.KeychainAccount, b)
-		if s.testKeychain != "" {
-			line := "add-generic-password -U -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -X " + hex.EncodeToString(b) + " " + securityQuote(s.testKeychain) + "\n"
-			c.Stdin = strings.NewReader(line)
-		}
-		if err := c.Run(); err != nil {
-			return errors.New("macOS Keychain credential write failed")
-		}
-	} else {
-		_, err := s.keychainRead()
-		created := false
+	{
+		_, err := s.aclIO().securityRead()
 		if errors.Is(err, os.ErrNotExist) {
 			executable, err := os.Executable()
 			if err != nil {
 				return errors.New("cannot resolve native Keychain writer")
+			}
+			for _, value := range []string{s.p.KeychainService, s.p.KeychainAccount, executable, s.testKeychain} {
+				if strings.ContainsAny(value, "\r\n\x00") {
+					return errors.New("invalid Keychain seed argument")
+				}
 			}
 			line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T " + securityQuote(executable) + " -X 7b7d\n"
 			if s.testKeychain != "" {
@@ -363,7 +364,6 @@ func (s *keychainStore) writeKeychain(b []byte) error {
 			if err := seed.Run(); err != nil {
 				return errors.New("cannot create native Keychain credential item")
 			}
-			created = true
 			if s.testSeed != nil {
 				if err := s.testSeed(); err != nil {
 					return err
@@ -372,17 +372,18 @@ func (s *keychainStore) writeKeychain(b []byte) error {
 		} else if err != nil {
 			return err
 		}
-		if err := nativeKeychainWrite(s.p.KeychainService, s.p.KeychainAccount, s.testKeychain, b); err != nil {
-			if created {
-				if cleanupErr := s.deleteKeychain(); cleanupErr != nil {
-					return errors.New("native Keychain write and seed cleanup failed")
-				}
-			}
+		if err := s.beginACLUpdate(b); err != nil {
+			return err
+		}
+		if err := s.aclIO().write(b); err != nil {
+			return errors.New("native Keychain update failed; durable ACL recovery is pending")
+		}
+		if err := s.recoverPendingACL(); err != nil {
 			return err
 		}
 	}
 
-	got, err := s.keychainRead()
+	got, err := s.aclIO().securityRead()
 	if err != nil {
 		return err
 	}
@@ -392,12 +393,18 @@ func (s *keychainStore) writeKeychain(b []byte) error {
 	return nil
 }
 func (s *keychainStore) Delete() error {
+	if err := s.recoverPendingACL(); err != nil {
+		return err
+	}
 	if err := s.deleteKeychain(); err != nil {
 		return err
 	}
 	return (&fileStore{s.p.CredentialFile}).Delete()
 }
 func (s *keychainStore) deleteKeychain() error {
+	if err := s.recoverPendingACL(); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, "/usr/bin/security", "delete-generic-password", "-a", s.p.KeychainAccount, "-s", s.p.KeychainService)
@@ -452,7 +459,10 @@ func recoverAccountPayload(live, before, after []byte) ([]byte, error) {
 // RecoverAccount resolves only generations explicitly recorded in the caller's
 // durable journal. Each backend retains its own unrelated integration fields.
 func (s *keychainStore) RecoverAccount(before, after []byte) error {
-	key, ke := s.keychainRead()
+	if err := s.recoverPendingACL(); err != nil {
+		return err
+	}
+	key, ke := s.aclIO().securityRead()
 	file, fe := (&fileStore{s.p.CredentialFile}).Read()
 	if ke != nil && !errors.Is(ke, os.ErrNotExist) {
 		return ke
