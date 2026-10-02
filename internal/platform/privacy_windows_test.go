@@ -22,11 +22,11 @@ func TestPrivateDirectoryRemovesExplicitEveryone(t *testing.T) {
 	if err := EnsurePrivateDir(path); err != nil {
 		t.Fatal(err)
 	}
-	c := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `$a=[System.IO.DirectoryInfo]::new($env:CLAUDE_ACCOUNTS_TEST_DIR).GetAccessControl(); if(-not $a.AreAccessRulesProtected){exit 1}; $rules=@($a.Access); if($rules.Count -ne 1){exit 2}; if($rules[0].IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq 'S-1-1-0'){exit 3}`)
-	c.Env = append(os.Environ(), "CLAUDE_ACCOUNTS_TEST_DIR="+path)
+	c := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `$a=[System.IO.DirectoryInfo]::new($env:CLAUFLIP_TEST_DIR).GetAccessControl(); if(-not $a.AreAccessRulesProtected){exit 1}; $rules=@($a.Access); if($rules.Count -ne 1){exit 2}; if($rules[0].IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq 'S-1-1-0'){exit 3}`)
+	c.Env = append(os.Environ(), "CLAUFLIP_TEST_DIR="+path)
 	if err := c.Run(); err != nil {
-		diagnostic := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", powershellModulePrelude+`$a=[System.IO.DirectoryInfo]::new($env:CLAUDE_ACCOUNTS_TEST_DIR).GetAccessControl(); 'SDDL='+$a.Sddl; 'Protected='+$a.AreAccessRulesProtected; 'ProcessSid='+[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $a.Access | ForEach-Object { 'RuleSid='+$_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value+';Inherited='+$_.IsInherited+';Type='+$_.AccessControlType }`)
-		diagnostic.Env = append(os.Environ(), "CLAUDE_ACCOUNTS_TEST_DIR="+path)
+		diagnostic := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", powershellModulePrelude+`$a=[System.IO.DirectoryInfo]::new($env:CLAUFLIP_TEST_DIR).GetAccessControl(); 'SDDL='+$a.Sddl; 'Protected='+$a.AreAccessRulesProtected; 'ProcessSid='+[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $a.Access | ForEach-Object { 'RuleSid='+$_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value+';Inherited='+$_.IsInherited+';Type='+$_.AccessControlType }`)
+		diagnostic.Env = append(os.Environ(), "CLAUFLIP_TEST_DIR="+path)
 		output, de := diagnostic.CombinedOutput()
 		u, _ := user.Current()
 		expected := "unavailable"

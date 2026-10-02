@@ -66,7 +66,7 @@ func isolatedKeychainFixture(t *testing.T, s *keychainStore) {
 // Opt in on a macOS runner with an unlocked test Keychain. Only a fresh,
 // tool-owned service is touched; never the actual Claude Code service.
 func TestKeychainLargeRoundTrip(t *testing.T) {
-	if os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" && os.Getenv("CI") != "true" {
+	if os.Getenv("CLAUFLIP_KEYCHAIN_TEST") != "1" && os.Getenv("CI") != "true" {
 		t.Skip("requires an unlocked macOS test Keychain")
 	}
 	t.Log("fixture: disabling native interaction")
@@ -165,7 +165,7 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 }
 
 func TestKeychainNewLargeRoundTrip(t *testing.T) {
-	if os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" && os.Getenv("CI") != "true" {
+	if os.Getenv("CLAUFLIP_KEYCHAIN_TEST") != "1" && os.Getenv("CI") != "true" {
 		t.Skip("requires unlocked test Keychain")
 	}
 	t.Log("fixture: disabling native interaction")
@@ -193,7 +193,7 @@ func TestKeychainNewLargeRoundTrip(t *testing.T) {
 }
 
 func TestExistingFileFallbackStaysOnFileBackend(t *testing.T) {
-	if os.Getenv("CI") != "true" && os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" {
+	if os.Getenv("CI") != "true" && os.Getenv("CLAUFLIP_KEYCHAIN_TEST") != "1" {
 		t.Skip("requires macOS test Keychain")
 	}
 	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "credentials.json"), KeychainService: fmt.Sprintf("clauflip-fallback-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
