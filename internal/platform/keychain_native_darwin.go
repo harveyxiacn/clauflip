@@ -27,6 +27,7 @@ static void clauflip_trace(const char *operation) {
 static OSStatus clauflip_copy_partitions(SecAccessRef access, CFArrayRef *result) {
     CFArrayRef all = NULL;
     OSStatus status = SecAccessCopyACLList(access, &all);
+    if (clauflip_fixture_trace) fprintf(stderr, "fake ACL enumeration status=%d count=%ld\n", (int)status, all ? (long)CFArrayGetCount(all) : -1L);
     if (status != errSecSuccess) return status;
     if (!all) return errSecParam;
     CFMutableArrayRef matches = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
@@ -34,6 +35,10 @@ static OSStatus clauflip_copy_partitions(SecAccessRef access, CFArrayRef *result
     for (CFIndex n = 0; n < CFArrayGetCount(all); n++) {
         SecACLRef acl = (SecACLRef)CFArrayGetValueAtIndex(all, n);
         CFArrayRef auths = SecACLCopyAuthorizations(acl);
+        if (clauflip_fixture_trace) {
+            fprintf(stderr, "fake ACL entry=%ld authorization-count=%ld\n", (long)n, auths ? (long)CFArrayGetCount(auths) : -1L);
+            if (auths) CFShow(auths);
+        }
         if (!auths) { CFRelease(matches); CFRelease(all); return errSecParam; }
         if (CFArrayContainsValue(auths, CFRangeMake(0, CFArrayGetCount(auths)), kSecACLAuthorizationPartitionID))
             CFArrayAppendValue(matches, acl);
