@@ -20,10 +20,12 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	if os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" && os.Getenv("CI") != "true" {
 		t.Skip("requires an unlocked macOS test Keychain")
 	}
+	t.Log("fixture: disabling native interaction")
 	restore, err := nativeKeychainTestNoInteraction()
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Log("fixture: native interaction disabled")
 	t.Cleanup(restore)
 	dir := t.TempDir()
 	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(dir, "absent.json"), KeychainService: fmt.Sprintf("claude-accounts-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
@@ -113,10 +115,12 @@ func TestKeychainNewLargeRoundTrip(t *testing.T) {
 	if os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" && os.Getenv("CI") != "true" {
 		t.Skip("requires unlocked test Keychain")
 	}
+	t.Log("fixture: disabling native interaction")
 	restore, err := nativeKeychainTestNoInteraction()
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Log("fixture: native interaction disabled")
 	t.Cleanup(restore)
 	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "absent.json"), KeychainService: fmt.Sprintf("claude-accounts-new-large-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
 	t.Cleanup(func() {
