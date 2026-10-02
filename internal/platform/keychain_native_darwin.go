@@ -254,72 +254,76 @@ static OSStatus clauflip_update(const char *service, const char *account, const 
     CFRelease(item);
     return status;
 }
-// Fake-item fixtures replace only their owner with the current Unix user.
-// A known fake Keychain password authorizes this one fixture setup operation.
+// Fake-item fixtures authorize only their own test executable as ACL owner.
+// Keep the mutable Access object: raw CSSM constructors mark ACLs unchanged.
 static OSStatus clauflip_fixture_owner(const char *service, const char *account,
-                                      const char *path, const char *password, int *stage) {
-    SecKeychainRef keychain = NULL; SecKeychainItemRef item = NULL;
-    SecAccessRef original = NULL, uidAccess = NULL, combined = NULL;
-    CSSM_ACL_OWNER_PROTOTYPE *oldOwner = NULL, *uidOwner = NULL;
-    CSSM_ACL_ENTRY_INFO *oldEntries = NULL, *uidEntries = NULL;
-    uint32 oldCount = 0, uidCount = 0;
-    CFArrayRef partitions = NULL;
+                                      const char *path, const char *password, const char *executable, int *stage) {
+    SecKeychainItemRef item = NULL; SecAccessRef access = NULL;
+    CFArrayRef partitions = NULL, all = NULL, apps = NULL;
+    SecTrustedApplicationRef trusted = NULL;
+    OSStatus status;
     *stage = 1;
-    OSStatus status = SecKeychainOpen(path, &keychain);
+    status = clauflip_find(service, account, path, &item);
     if (status != errSecSuccess) goto done;
     *stage = 2;
-    status = SecKeychainFindGenericPassword(keychain, (UInt32)strlen(service), service,
-        (UInt32)strlen(account), account, NULL, NULL, &item);
+    status = SecKeychainItemCopyAccess(item, &access);
     if (status != errSecSuccess) goto done;
     *stage = 3;
-    status = SecKeychainItemCopyAccess(item, &original);
-    if (status != errSecSuccess) goto done;
-    *stage = 4;
-    status = clauflip_copy_partitions(original, &partitions);
+    status = clauflip_copy_partitions(access, &partitions);
     if (status != errSecSuccess) goto done;
     if (CFArrayGetCount(partitions) == 0) {
-        status = clauflip_fixture_partition(original);
+        status = clauflip_fixture_partition(access);
         if (status != errSecSuccess) goto done;
     }
-    CFRelease(partitions); partitions = NULL;
-    *stage = 5;
-    status = SecAccessGetOwnerAndACL(original, &oldOwner, &oldCount, &oldEntries);
+    *stage = 4;
+    status = SecAccessCopyACLList(access, &all);
     if (status != errSecSuccess) goto done;
+    status = SecTrustedApplicationCreateFromPath(executable, &trusted);
+    if (status != errSecSuccess) goto done;
+    apps = CFArrayCreate(kCFAllocatorDefault, (const void **)&trusted, 1, &kCFTypeArrayCallBacks);
+    if (!apps) { status = errSecAllocate; goto done; }
+    unsigned found = 0;
+    for (CFIndex n = 0; n < CFArrayGetCount(all); n++) {
+        SecACLRef acl = (SecACLRef)CFArrayGetValueAtIndex(all, n);
+        CFArrayRef auths = SecACLCopyAuthorizations(acl);
+        if (!auths) { status = errSecParam; goto done; }
+        int owner = CFArrayGetCount(auths) == 1 && CFEqual(CFArrayGetValueAtIndex(auths, 0), kSecACLAuthorizationChangeACL);
+        CFRelease(auths);
+        if (owner) {
+            *stage = 5;
+            CFArrayRef oldApps = NULL; CFStringRef description = NULL;
+            SecKeychainPromptSelector prompt;
+            status = SecACLCopyContents(acl, &oldApps, &description, &prompt);
+            if (status == errSecSuccess) status = SecACLSetContents(acl, apps, description, 0);
+            if (oldApps) CFRelease(oldApps);
+            if (description) CFRelease(description);
+            if (status != errSecSuccess) goto done;
+            found++;
+        }
+    }
+    if (found != 1) { status = errSecParam; goto done; }
     *stage = 6;
-    uidAccess = SecAccessCreateWithOwnerAndACL(getuid(), getgid(), kSecUseOnlyUID, NULL, NULL);
-    if (!uidAccess) { status = errSecAllocate; goto done; }
-    *stage = 7;
-    status = SecAccessGetOwnerAndACL(uidAccess, &uidOwner, &uidCount, &uidEntries);
-    if (status != errSecSuccess) goto done;
-    *stage = 8;
-    // This API deep-copies the owner and every original ACL entry, including
-    // partitions and integrity. Only the fake item's owner is substituted.
-    status = SecAccessCreateFromOwnerAndACL(uidOwner, oldCount, oldEntries, &combined);
-    if (status != errSecSuccess) goto done;
-    *stage = 9;
-    // Apple SPI confined to fake fixture setup; no production link dependency.
     typedef OSStatus (*SetAccessWithPassword)(SecKeychainItemRef, SecAccessRef, UInt32, const void *);
     SetAccessWithPassword set = (SetAccessWithPassword)dlsym(RTLD_DEFAULT, "SecKeychainItemSetAccessWithPassword");
-    status = set ? set(item, combined, (UInt32)strlen(password), password) : errSecUnimplemented;
+    status = set ? set(item, access, (UInt32)strlen(password), password) : errSecUnimplemented;
     if (status != errSecSuccess) goto done;
-    *stage = 10;
+    *stage = 7;
     SecAccessRef verified = NULL;
     status = SecKeychainItemCopyAccess(item, &verified);
     if (status == errSecSuccess) {
-        status = clauflip_copy_partitions(verified, &partitions);
-        if (status == errSecSuccess && CFArrayGetCount(partitions) == 0) status = errSecParam;
+        CFArrayRef preserved = NULL;
+        status = clauflip_copy_partitions(verified, &preserved);
+        if (status == errSecSuccess && CFArrayGetCount(preserved) == 0) status = errSecParam;
+        if (preserved) CFRelease(preserved);
         CFRelease(verified);
     }
 done:
+    if (apps) CFRelease(apps);
+    if (all) CFRelease(all);
     if (partitions) CFRelease(partitions);
-    if (combined) CFRelease(combined);
-    if (uidAccess) CFRelease(uidAccess);
-    if (original) CFRelease(original);
+    if (trusted) CFRelease(trusted);
+    if (access) CFRelease(access);
     if (item) CFRelease(item);
-    if (keychain) CFRelease(keychain);
-    // SecAccessGetOwnerAndACL allocates CSSM prototypes. The tool never calls
-    // this helper outside two short-lived fake-item integration fixtures.
-    free(oldOwner); free(oldEntries); free(uidOwner); free(uidEntries);
     return status;
 }
 */
@@ -425,13 +429,19 @@ func nativeKeychainFixtureInterruptedWrite(service, account, path string, b []by
 }
 
 func nativeKeychainFixtureOwner(service, account, path, password string) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	ce := C.CString(executable)
+	defer C.free(unsafe.Pointer(ce))
 	cs, ca, cp, cw := C.CString(service), C.CString(account), C.CString(path), C.CString(password)
 	defer C.free(unsafe.Pointer(cs))
 	defer C.free(unsafe.Pointer(ca))
 	defer C.free(unsafe.Pointer(cp))
 	defer C.free(unsafe.Pointer(cw))
 	var stage C.int
-	if status := C.clauflip_fixture_owner(cs, ca, cp, cw, &stage); status != 0 {
+	if status := C.clauflip_fixture_owner(cs, ca, cp, cw, ce, &stage); status != 0 {
 		return fmt.Errorf("fake Keychain owner setup failed (stage %d, status %d)", int(stage), int32(status))
 	}
 	return nil
