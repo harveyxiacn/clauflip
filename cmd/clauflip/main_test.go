@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/harveyxiacn/claude-accounts/internal/accounts"
+	"github.com/harveyxiacn/clauflip/internal/accounts"
 )
 
 type fakeEngine struct {

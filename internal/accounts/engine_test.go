@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/harveyxiacn/claude-accounts/internal/platform"
+	"github.com/harveyxiacn/clauflip/internal/platform"
 )
 
 type memoryCredentials struct {

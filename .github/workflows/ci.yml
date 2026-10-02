@@ -18,7 +18,7 @@ jobs:
           go-version: '1.26.x'
       - run: go test -timeout 2m ./...
       - run: go vet ./...
-      - run: go build ./cmd/claude-accounts
+      - run: go build ./cmd/clauflip
   binaries:
     needs: test
     runs-on: ${{ matrix.target.runner }}
@@ -50,9 +50,9 @@ jobs:
           mkdir -p dist
           suffix=''
           if [ "$GOOS" = windows ]; then suffix='.exe'; fi
-          go build -trimpath -o "dist/claude-accounts-$GOOS-$GOARCH$suffix" ./cmd/claude-accounts
+          go build -trimpath -o "dist/clauflip-$GOOS-$GOARCH$suffix" ./cmd/clauflip
       - uses: actions/upload-artifact@v7
         with:
-          name: claude-accounts-${{ matrix.target.goos }}-${{ matrix.goarch }}
+          name: clauflip-${{ matrix.target.goos }}-${{ matrix.goarch }}
           path: dist/*
           if-no-files-found: error

@@ -9,10 +9,54 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func isolatedKeychainFixture(t *testing.T, s *keychainStore) {
+	t.Helper()
+	previous, err := exec.Command("/usr/bin/security", "list-keychains", "-d", "user").Output()
+	if err != nil {
+		t.Fatal("cannot snapshot fixture Keychain search list", err)
+	}
+	args := []string{"list-keychains", "-d", "user", "-s"}
+	for _, line := range strings.Split(string(previous), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		path, err := strconv.Unquote(line)
+		if err != nil {
+			t.Fatal("cannot parse fixture search-list entry")
+		}
+		args = append(args, path)
+	}
+	path := filepath.Join(t.TempDir(), "fixture.keychain-db")
+	password := "invented-clauflip-keychain-fixture-password"
+	if output, err := exec.Command("/usr/bin/security", "create-keychain", "-p", password, path).CombinedOutput(); err != nil {
+		t.Fatalf("fake Keychain creation: %v %s", err, output)
+	}
+	t.Cleanup(func() {
+		exec.Command("/usr/bin/security", "delete-keychain", path).Run()
+		if err := exec.Command("/usr/bin/security", args...).Run(); err != nil {
+			t.Error("fixture search-list restore failed", err)
+		}
+	})
+	// Creation can add a Keychain to the user list. Restore immediately; every
+	// fixture command and native lookup binds its isolated path explicitly.
+	if err := exec.Command("/usr/bin/security", args...).Run(); err != nil {
+		t.Fatal("fixture search-list restore failed", err)
+	}
+	if err := exec.Command("/usr/bin/security", "unlock-keychain", "-p", password, path).Run(); err != nil {
+		t.Fatal("fake Keychain unlock failed", err)
+	}
+	s.testKeychain = path
+	s.testSeed = func() error {
+		return nativeKeychainFixtureOwner(s.p.KeychainService, s.p.KeychainAccount, path, password)
+	}
+}
 
 // Opt in on a macOS runner with an unlocked test Keychain. Only a fresh,
 // tool-owned service is touched; never the actual Claude Code service.
@@ -28,7 +72,8 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	t.Log("fixture: native interaction disabled")
 	t.Cleanup(restore)
 	dir := t.TempDir()
-	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(dir, "absent.json"), KeychainService: fmt.Sprintf("claude-accounts-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
+	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(dir, "absent.json"), KeychainService: fmt.Sprintf("clauflip-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
+	isolatedKeychainFixture(t, s)
 	t.Cleanup(func() {
 		if err := s.Delete(); err != nil {
 			t.Error(err)
@@ -41,11 +86,14 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T " + securityQuote(executable) + " -X " + hex.EncodeToString(small) + "\n"
+	line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T " + securityQuote(executable) + " -X " + hex.EncodeToString(small) + " " + securityQuote(s.testKeychain) + "\n"
 	c := exec.Command("/usr/bin/security", "-i")
 	c.Stdin = strings.NewReader(line)
 	if output, err := c.CombinedOutput(); err != nil {
 		t.Fatalf("fixture Keychain creation: %v: %s", err, output)
+	}
+	if err := s.testSeed(); err != nil {
+		t.Fatal(err)
 	}
 	if err := s.Write(small); err != nil {
 		t.Fatal(err)
@@ -122,7 +170,8 @@ func TestKeychainNewLargeRoundTrip(t *testing.T) {
 	}
 	t.Log("fixture: native interaction disabled")
 	t.Cleanup(restore)
-	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "absent.json"), KeychainService: fmt.Sprintf("claude-accounts-new-large-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
+	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "absent.json"), KeychainService: fmt.Sprintf("clauflip-new-large-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
+	isolatedKeychainFixture(t, s)
 	t.Cleanup(func() {
 		if err := s.Delete(); err != nil {
 			t.Error(err)
@@ -142,7 +191,7 @@ func TestExistingFileFallbackStaysOnFileBackend(t *testing.T) {
 	if os.Getenv("CI") != "true" && os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" {
 		t.Skip("requires macOS test Keychain")
 	}
-	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "credentials.json"), KeychainService: fmt.Sprintf("claude-accounts-fallback-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
+	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "credentials.json"), KeychainService: fmt.Sprintf("clauflip-fallback-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
 	t.Cleanup(func() {
 		if err := s.Delete(); err != nil {
 			t.Error(err)

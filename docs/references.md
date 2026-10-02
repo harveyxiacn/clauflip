@@ -36,3 +36,9 @@ CC Switch 主要解决供应商配置和本地代理管理，超出本项目的�
 | CC Switch [#3519](https://github.com/farion1231/cc-switch/issues/3519) | 已关闭；用户担忧自动查询用量时的 IP／区域风险 | 不自动请求用量接口；该记录是风险担忧，不能当作已证实封号事件 |
 
 这些场景是设计及验证目标，不能把表格理解为已经完成所有回归测试；实际验证见 [兼容性说明](compatibility.md)。
+
+## 官方接口依据
+
+登录与会话恢复的用户接口参考 [Claude Code 认证文档](https://code.claude.com/docs/en/authentication)及 [CLI 文档](https://code.claude.com/docs/en/cli-reference)。账户文件字段和 Keychain 名称仍属于内部格式，不视为官方兼容性承诺。
+
+macOS 实现核对了 Apple 开源 [security 命令实现](https://github.com/apple-oss-distributions/Security/blob/main/SecurityTool/macOS/security.c)与 [Keychain Item 实现](https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_keychain/lib/Item.cpp)。前者存在交互输入长度限制；后者在更新内容时会重建存储组及其分区访问规则。因此大凭据不能仅验证写入成功，还必须验证官方 `security` 命令可继续读取。项目调用系统接口，不复制 Apple 实现源码。

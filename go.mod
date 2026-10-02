@@ -1,4 +1,4 @@
-module github.com/harveyxiacn/claude-accounts
+module github.com/harveyxiacn/clauflip
 
 go 1.26.0
 

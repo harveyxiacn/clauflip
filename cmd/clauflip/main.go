@@ -7,14 +7,14 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/harveyxiacn/claude-accounts/internal/accounts"
-	"github.com/harveyxiacn/claude-accounts/internal/platform"
+	"github.com/harveyxiacn/clauflip/internal/accounts"
+	"github.com/harveyxiacn/clauflip/internal/platform"
 )
 
 const version = "0.1.0"
-const help = `claude-accounts 0.1.0 — Claude Code 订阅账户手动切换
+const help = `clauflip 0.1.0 — Claude Code 订阅账户手动切换
 
-用法：claude-accounts COMMAND [NAME]
+用法：clauflip COMMAND [NAME]
   login NAME  使用官方登录并保存新账户
   save NAME   保存当前已登录账户
   list        显示已保存账户
@@ -75,11 +75,11 @@ func run(args []string, out, stderr io.Writer, open func() (engine, error), look
 		arity = 2
 	case "help", "--help", "-h", "version", "--version", "list", "recover":
 	default:
-		fmt.Fprintln(stderr, "未知命令；运行 claude-accounts help。")
+		fmt.Fprintln(stderr, "未知命令；运行 clauflip help。")
 		return 2
 	}
 	if len(args) != arity || (arity == 2 && strings.TrimSpace(args[1]) == "") {
-		fmt.Fprintln(stderr, "参数错误；运行 claude-accounts help。")
+		fmt.Fprintln(stderr, "参数错误；运行 clauflip help。")
 		return 2
 	}
 	if command == "help" || command == "--help" || command == "-h" {

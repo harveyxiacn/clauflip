@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harveyxiacn/claude-accounts/internal/platform"
+	"github.com/harveyxiacn/clauflip/internal/platform"
 )
 
 type snapshot struct {
@@ -315,7 +315,7 @@ func (e *Engine) locked(mutating, allowPending bool, fn func() error) error {
 	defer unlock()
 	if !allowPending {
 		if _, err := os.Lstat(e.journalPath()); err == nil {
-			return errors.New("an interrupted switch needs recovery: close Claude and run claude-accounts recover")
+			return errors.New("an interrupted switch needs recovery: close Claude and run clauflip recover")
 		} else if !os.IsNotExist(err) {
 			return errors.New("cannot inspect recovery journal")
 		}
@@ -437,7 +437,7 @@ func (e *Engine) Use(name string) error {
 		}
 		current := find(s, before)
 		if current == "" {
-			return errors.New("current live account has not been saved; run claude-accounts save NAME first")
+			return errors.New("current live account has not been saved; run clauflip save NAME first")
 		}
 		s.Accounts[current] = before
 		s.Active = current
@@ -509,7 +509,7 @@ func (j journal) relogin() bool {
 func (e *Engine) transition(s state, current, name string, before, target snapshot) error {
 	j := journal{Version: 1, Before: before, After: target, ActiveBefore: current, ActiveAfter: name}
 	refreshing := j.relogin()
-	pending := errors.New("refreshed login activation is pending; close Claude and run claude-accounts recover")
+	pending := errors.New("refreshed login activation is pending; close Claude and run clauflip recover")
 	// Keep the acquired generation durable even if the final idle check fails.
 	if refreshing {
 		if err := e.writeJSON(e.journalPath(), j); err != nil {
@@ -555,12 +555,12 @@ func (e *Engine) transition(s state, current, name string, before, target snapsh
 			return pending
 		}
 		if rollback := e.rollback(j); rollback != nil {
-			return errors.New("switch failed and rollback is incomplete; close Claude and run claude-accounts recover")
+			return errors.New("switch failed and rollback is incomplete; close Claude and run clauflip recover")
 		}
 		return errors.New("switch failed; previous account restored")
 	}
 	if err = os.Remove(e.journalPath()); err != nil {
-		return errors.New("switch written but recovery journal could not be cleared; run claude-accounts recover before using Claude")
+		return errors.New("switch written but recovery journal could not be cleared; run clauflip recover before using Claude")
 	}
 	return nil
 }
@@ -687,7 +687,7 @@ func (e *Engine) Login(name string) error {
 			}
 			current = find(s, before)
 			if current == "" {
-				return errors.New("save the existing login first: claude-accounts save NAME")
+				return errors.New("save the existing login first: clauflip save NAME")
 			}
 			s.Accounts[current] = before
 			s.Active = current

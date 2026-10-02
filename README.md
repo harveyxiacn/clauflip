@@ -1,4 +1,4 @@
-# claude-accounts
+# ClauFlip
 
 小型跨平台 Claude Code 订阅账户手动切换工具。保存多个已登录身份，切换时保留现有 hooks、设置、项目记录和本地会话。使用 Go，版本 0.1.0。
 
@@ -6,26 +6,28 @@
 
 ## 使用
 
-从 [GitHub Actions](https://github.com/harveyxiacn/claude-accounts/actions) 成功的工作流产物下载对应平台二进制，解压后重命名为 `claude-accounts`（Windows 为 `claude-accounts.exe`），放入已有 PATH 目录，或直接使用完整路径运行。macOS/Linux 首次使用需执行 `chmod +x claude-accounts`。也可使用 Go 1.26 构建：
+从 [GitHub Actions](https://github.com/harveyxiacn/clauflip/actions) 成功的工作流产物下载对应平台二进制，解压后重命名为 `clauflip`（Windows 为 `clauflip.exe`），放入已有 PATH 目录，或直接使用完整路径运行。macOS/Linux 首次使用需执行 `chmod +x clauflip`。也可使用 Go 1.26 构建：
 
 ```sh
-go build -buildvcs=false -o claude-accounts ./cmd/claude-accounts
+go build -buildvcs=false -o clauflip ./cmd/clauflip
 # Windows:
-go build -buildvcs=false -o claude-accounts.exe ./cmd/claude-accounts
+go build -buildvcs=false -o clauflip.exe ./cmd/clauflip
 ```
+
+macOS 源码构建需要 Xcode Command Line Tools，并启用 CGO（本机构建默认启用）。下载的二进制无需安装 Go。访问已有钥匙串项目可能需要解锁；大凭据切换还可能弹出系统授权窗口，要求确认钥匙串权限。
 
 已有个人账户登录时，先退出 Claude Code，再执行：
 
 ```sh
-claude-accounts save personal
-claude-accounts login work
-claude-accounts list
-claude-accounts use personal
+clauflip save personal
+clauflip login work
+clauflip list
+clauflip use personal
 ```
 
 `login work` 在临时私有配置目录中启动官方登录，成功后导入账户字段；临时配置只传给子进程，不修改父进程环境，也不让登录流程改写已有 hooks 和共享配置。
 
-没有现成登录时，直接从 `claude-accounts login personal` 开始。每个账号只需完成首次浏览器授权；普通切换不调用登出。官方令牌已失效时，可用同一个名称重新执行 `login`。
+没有现成登录时，直接从 `clauflip login personal` 开始。每个账号只需完成首次浏览器授权；普通切换不调用登出。官方令牌已失效时，可用同一个名称重新执行 `login`。
 
 切换后回到原项目目录，重新启动 Claude：
 
@@ -53,7 +55,7 @@ claude --resume
 
 账户快照含敏感登录材料，采用明文存储，与官方 Linux 文件凭据存储类似；这不是加密保险库。POSIX 目录／文件权限为 0700／0600，Windows 使用当前用户 ACL。不要将快照提交到版本库或分享。
 
-快照保存在 `~/.claude-accounts/<配置标识>/accounts.json`，不同 Claude 配置分开管理。`remove` 只删除工具快照，不登出当前 Claude 账号。登录临时目录在成功、取消或失败后清理；清理失败会显示目录位置。使用现有 `CLAUDE_CONFIG_DIR` 时应始终从相同环境运行本工具。
+快照保存在 `~/.clauflip/<配置标识>/accounts.json`，不同 Claude 配置分开管理。`remove` 只删除工具快照，不登出当前 Claude 账号。登录临时目录在成功、取消或失败后清理；清理失败会显示目录位置。使用现有 `CLAUDE_CONFIG_DIR` 时应始终从相同环境运行本工具。
 
 环境覆盖变量会保留；修改操作会提示相关变量名称，不打印值。已有 API key、自定义接口或云供应商环境变量可能覆盖所选订阅身份。
 

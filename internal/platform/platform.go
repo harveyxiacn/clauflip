@@ -78,7 +78,7 @@ func ResolvePaths(home string, lookup func(string) (string, bool)) (Paths, error
 		backendBinding += "\x00" + service + "\x00" + account
 	}
 	binding := sha256.Sum256([]byte(backendBinding))
-	return Paths{config, identity, filepath.Join(config, ".credentials.json"), filepath.Join(home, ".claude-accounts", hex.EncodeToString(binding[:])[:16]), service, account}, nil
+	return Paths{config, identity, filepath.Join(config, ".credentials.json"), filepath.Join(home, ".clauflip", hex.EncodeToString(binding[:])[:16]), service, account}, nil
 }
 
 func checkPath(path string) error {
@@ -136,7 +136,7 @@ func AtomicWrite(path string, data []byte, mode os.FileMode) error {
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
 		return errors.New("target is not a regular file")
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".claude-accounts-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".clauflip-*")
 	if err != nil {
 		return err
 	}
@@ -202,12 +202,19 @@ func OpenCredentials(p Paths) (CredentialStore, error) {
 	return &fileStore{p.CredentialFile}, nil
 }
 
-type keychainStore struct{ p Paths }
+type keychainStore struct {
+	p            Paths
+	testKeychain string // Empty in production; integration fixtures bind an isolated Keychain.
+	testSeed     func() error
+}
 
 func (s *keychainStore) keychainRead() ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, "/usr/bin/security", "find-generic-password", "-a", s.p.KeychainAccount, "-s", s.p.KeychainService, "-w")
+	if s.testKeychain != "" {
+		c.Args = append(c.Args, s.testKeychain)
+	}
 	var out bytes.Buffer
 	c.Stdout = &out
 	if err := c.Run(); err != nil {
@@ -328,7 +335,12 @@ func (s *keychainStore) writeKeychain(b []byte) error {
 	defer cancel()
 	lineLength := len("add-generic-password -U -a ") + len(securityQuote(s.p.KeychainAccount)) + len(" -s ") + len(securityQuote(s.p.KeychainService)) + len(" -X ") + hex.EncodedLen(len(b)) + 1
 	if lineLength <= 4032 {
-		if err := securityWriteCommand(ctx, s.p.KeychainService, s.p.KeychainAccount, b).Run(); err != nil {
+		c := securityWriteCommand(ctx, s.p.KeychainService, s.p.KeychainAccount, b)
+		if s.testKeychain != "" {
+			line := "add-generic-password -U -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -X " + hex.EncodeToString(b) + " " + securityQuote(s.testKeychain) + "\n"
+			c.Stdin = strings.NewReader(line)
+		}
+		if err := c.Run(); err != nil {
 			return errors.New("macOS Keychain credential write failed")
 		}
 	} else {
@@ -340,6 +352,9 @@ func (s *keychainStore) writeKeychain(b []byte) error {
 				return errors.New("cannot resolve native Keychain writer")
 			}
 			line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T " + securityQuote(executable) + " -X 7b7d\n"
+			if s.testKeychain != "" {
+				line = strings.TrimSuffix(line, "\n") + " " + securityQuote(s.testKeychain) + "\n"
+			}
 			if len(line) > 4032 {
 				return errors.New("native Keychain seed command exceeds safe size")
 			}
@@ -349,10 +364,15 @@ func (s *keychainStore) writeKeychain(b []byte) error {
 				return errors.New("cannot create native Keychain credential item")
 			}
 			created = true
+			if s.testSeed != nil {
+				if err := s.testSeed(); err != nil {
+					return err
+				}
+			}
 		} else if err != nil {
 			return err
 		}
-		if err := nativeKeychainWrite(s.p.KeychainService, s.p.KeychainAccount, b); err != nil {
+		if err := nativeKeychainWrite(s.p.KeychainService, s.p.KeychainAccount, s.testKeychain, b); err != nil {
 			if created {
 				if cleanupErr := s.deleteKeychain(); cleanupErr != nil {
 					return errors.New("native Keychain write and seed cleanup failed")
@@ -381,6 +401,9 @@ func (s *keychainStore) deleteKeychain() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, "/usr/bin/security", "delete-generic-password", "-a", s.p.KeychainAccount, "-s", s.p.KeychainService)
+	if s.testKeychain != "" {
+		c.Args = append(c.Args, s.testKeychain)
+	}
 	if err := c.Run(); err != nil {
 		var e *exec.ExitError
 		if !errors.As(err, &e) || e.ExitCode() != 44 {
@@ -488,7 +511,7 @@ func Lock(path string) (func(), error) {
 	}
 	if err = lockFile(f); err != nil {
 		f.Close()
-		return nil, errors.New("another claude-accounts command is running")
+		return nil, errors.New("another clauflip command is running")
 	}
 	var once sync.Once
 	return func() { once.Do(func() { unlockFile(f); f.Close() }) }, nil
