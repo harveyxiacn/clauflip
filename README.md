@@ -1,12 +1,14 @@
 # ClauFlip
 
-小型跨平台 Claude Code 订阅账户手动切换工具。保存多个已登录身份，切换时保留现有 hooks、设置、项目记录和本地会话。使用 Go，版本 0.1.0。
+小型跨平台 Claude Code 订阅账户手动切换工具。保存多个已登录身份，切换时保留现有 hooks、设置、项目记录和本地会话。使用 Go，版本 0.1.0（预览版）。
 
 仅支持官方 Claude Code 订阅 OAuth 登录。账户的访问权限和订阅能力仍由官方服务决定。
 
 ## 使用
 
-从 [GitHub Actions](https://github.com/harveyxiacn/clauflip/actions) 成功的工作流产物下载对应平台二进制，解压后重命名为 `clauflip`（Windows 为 `clauflip.exe`），放入已有 PATH 目录，或直接使用完整路径运行。macOS/Linux 首次使用需执行 `chmod +x clauflip`。也可使用 Go 1.26 构建：
+需要先安装官方 Claude Code，并确保 `claude` 命令在 PATH 中可用。
+
+从 [GitHub Releases](https://github.com/harveyxiacn/clauflip/releases) 下载对应平台的预览版，或从 [GitHub Actions](https://github.com/harveyxiacn/clauflip/actions) 下载成功构建的产物。解压后使用 `clauflip`（Windows 为 `clauflip.exe`；Actions 产物需先重命名），放入已有 PATH 目录，或直接使用完整路径运行。macOS/Linux 首次使用需执行 `chmod +x clauflip`。也可使用 Go 1.26 构建：
 
 ```sh
 go build -buildvcs=false -o clauflip ./cmd/clauflip

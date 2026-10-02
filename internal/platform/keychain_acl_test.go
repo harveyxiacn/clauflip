@@ -185,6 +185,32 @@ func TestKeychainSeedRejectsInteractiveCommandSeparators(t *testing.T) {
 	}
 }
 
+func TestOversizedKeychainPayloadRejectedBeforeAnyIO(t *testing.T) {
+	s, _, _, _ := aclFixture(t)
+	calls := 0
+	s.testACL = &keychainACLIO{
+		snapshot:     func() ([]byte, error) { calls++; return nil, errors.New("unexpected snapshot") },
+		read:         func() ([]byte, error) { calls++; return nil, errors.New("unexpected read") },
+		restore:      func([]byte) error { calls++; return errors.New("unexpected ACL restore") },
+		securityRead: func() ([]byte, error) { calls++; return nil, os.ErrNotExist },
+		write:        func([]byte) error { calls++; return errors.New("unexpected mutation") },
+	}
+	// A separator would stop the seed command if it were reached; the size
+	// rejection must occur first, before even checking whether a seed is needed.
+	s.p.KeychainAccount = "fake\nunsafe-seed"
+	for _, operation := range []func([]byte) error{s.Write, s.writeKeychain} {
+		if err := operation(make([]byte, (4<<20)+1)); err == nil || !strings.Contains(err.Error(), "exceeds safe size") {
+			t.Fatalf("oversized payload not rejected first: %v", err)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("oversized payload triggered native or security operations")
+	}
+	if _, err := os.Stat(s.aclPath()); !os.IsNotExist(err) {
+		t.Fatal("oversized payload created recovery journal")
+	}
+}
+
 func TestKeychainACLRestoreFailureRetainsJournalForRetry(t *testing.T) {
 	s, _, _, restores := aclFixture(t)
 	if err := s.beginACLUpdate([]byte("after")); err != nil {

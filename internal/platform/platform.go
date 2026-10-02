@@ -30,6 +30,8 @@ type CredentialStore interface {
 	Delete() error
 }
 
+const maxKeychainPayload = 4 << 20
+
 func ResolvePaths(home string, lookup func(string) (string, bool)) (Paths, error) {
 	if home == "" {
 		return Paths{}, errors.New("home directory is missing")
@@ -279,6 +281,9 @@ func securityWriteCommand(ctx context.Context, service, account string, b []byte
 	return c
 }
 func (s *keychainStore) Write(b []byte) error {
+	if len(b) > maxKeychainPayload {
+		return errors.New("native Keychain credential exceeds safe size")
+	}
 	if _, err := s.Read(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -335,6 +340,9 @@ func (s *keychainStore) Write(b []byte) error {
 }
 
 func (s *keychainStore) writeKeychain(b []byte) error {
+	if len(b) > maxKeychainPayload {
+		return errors.New("native Keychain credential exceeds safe size")
+	}
 	if err := s.recoverPendingACL(); err != nil {
 		return err
 	}

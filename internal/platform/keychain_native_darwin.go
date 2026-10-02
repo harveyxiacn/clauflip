@@ -167,6 +167,7 @@ static OSStatus clauflip_restore(const char *service, const char *account, const
             if (CFGetTypeID(CFArrayGetValueAtIndex(auths, a)) != CFStringGetTypeID()) { status = errSecParam; goto done; }
         }
         CFArrayRef apps = CFBooleanGetValue(present) ? CFArrayCreate(kCFAllocatorDefault, NULL, 0, &kCFTypeArrayCallBacks) : NULL;
+        if (CFBooleanGetValue(present) && !apps) { status = errSecAllocate; goto done; }
         SecACLRef copy = NULL;
         status = SecACLCreateWithSimpleContents(access, apps, description, (SecKeychainPromptSelector)flags, &copy);
         if (status == errSecSuccess) status = SecACLUpdateAuthorizations(copy, auths);
@@ -362,7 +363,7 @@ import (
 )
 
 func nativeKeychainWrite(service, account, path string, b []byte) error {
-	if strings.ContainsRune(service, 0) || strings.ContainsRune(account, 0) || len(b) == 0 || uint64(len(b)) > uint64(^uint32(0)) {
+	if strings.ContainsRune(service, 0) || strings.ContainsRune(account, 0) || len(b) == 0 || len(b) > maxKeychainPayload {
 		return errors.New("invalid native Keychain input")
 	}
 	cs, ca := C.CString(service), C.CString(account)
@@ -435,7 +436,7 @@ func nativeKeychainRead(service, account, path string) ([]byte, error) {
 			C.SecKeychainItemFreeContent(nil, data)
 		}
 	}()
-	if length > 4<<20 {
+	if uint64(length) > uint64(maxKeychainPayload) {
 		return nil, errors.New("native Keychain credential exceeds safe size")
 	}
 	return C.GoBytes(data, C.int(length)), nil
