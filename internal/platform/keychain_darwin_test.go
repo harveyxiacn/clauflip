@@ -95,3 +95,28 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 		t.Fatal("recovery lost fallback shared data", err)
 	}
 }
+
+func TestExistingFileFallbackStaysOnFileBackend(t *testing.T) {
+	if os.Getenv("CI") != "true" && os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" {
+		t.Skip("requires macOS test Keychain")
+	}
+	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "credentials.json"), KeychainService: fmt.Sprintf("claude-accounts-fallback-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
+	t.Cleanup(func() {
+		if err := s.Delete(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := os.WriteFile(s.p.CredentialFile, []byte(`{"claudeAiOauth":{"accessToken":"old"},"mcpOAuth":{"keep":true}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Write([]byte(`{"claudeAiOauth":{"accessToken":"new"},"mcpOAuth":{"keep":true}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.keychainRead(); !os.IsNotExist(err) {
+		t.Fatal("file fallback was unexpectedly migrated into Keychain", err)
+	}
+	got, err := s.Read()
+	if err != nil || !bytes.Contains(got, []byte("new")) || !bytes.Contains(got, []byte("keep")) {
+		t.Fatal("file fallback did not retain updated account and shared data", err)
+	}
+}
