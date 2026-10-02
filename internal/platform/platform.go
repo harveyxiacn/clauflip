@@ -265,19 +265,20 @@ func securityQuote(s string) string {
 // through stdin. Service/account arguments contain no tokens.
 const keychainWriteScript = `ObjC.import('Foundation'); ObjC.import('Security');
 function run(argv) {
- var query = $.NSMutableDictionary.alloc.init;
- query.setObjectForKey(ObjC.castRefToObject($.kSecClassGenericPassword), ObjC.castRefToObject($.kSecClass));
- query.setObjectForKey($(argv[0]), ObjC.castRefToObject($.kSecAttrService));
- query.setObjectForKey($(argv[1]), ObjC.castRefToObject($.kSecAttrAccount));
  var data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
- query.setObjectForKey($.NSNumber.numberWithBool(true), ObjC.castRefToObject($.kSecReturnRef));
- query.setObjectForKey(ObjC.castRefToObject($.kSecMatchLimitOne), ObjC.castRefToObject($.kSecMatchLimit));
+ var service = $(argv[0]).dataUsingEncoding($.NSUTF8StringEncoding);
+ var account = $(argv[1]).dataUsingEncoding($.NSUTF8StringEncoding);
  var item = Ref();
- var status = Number($.SecItemCopyMatching(query, item));
+ var status;
+ try {
+   status = Number($.SecKeychainFindGenericPassword(null, Number(service.length), argv[0], Number(account.length), argv[1], null, null, item));
+ } catch (e) { throw new Error('Legacy Keychain item lookup bridge failed: ' + e.message); }
  if (status !== 0) throw new Error('Existing Keychain item lookup failed (' + status + ')');
  // Match security -U's legacy content-only update. SecItemUpdate may recreate
  // access policy under this host; changing the item's ACL is not authorized.
- status = Number($.SecKeychainItemModifyContent(item[0], null, Number(data.length), data.bytes));
+ try {
+   status = Number($.SecKeychainItemModifyContent(item[0], null, Number(data.length), data.bytes));
+ } catch (e) { throw new Error('Legacy Keychain content update bridge failed: ' + e.message); }
  if (status !== 0) throw new Error('Keychain write failed (' + status + ')');
 }`
 
