@@ -4,6 +4,7 @@ package platform
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,7 +32,12 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	}
 	b := []byte(`{"claudeAiOauth":{"accessToken":"fixture"},"mcpOAuth":{"fixture":"` + strings.Repeat("x", 15000) + `"}}`)
 	if err := s.Write(b); err != nil {
-		t.Fatal(err)
+		// This unique test service contains only invented fixture tokens. Preserve
+		// native diagnostics here without changing production error redaction.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		output, diagnosticErr := keychainWriteCommandContext(ctx, s.p.KeychainService, s.p.KeychainAccount, b).CombinedOutput()
+		t.Fatalf("%v; fixture-only native diagnostic: %v: %s", err, diagnosticErr, output)
 	}
 	got, err := s.Read()
 	if err != nil {

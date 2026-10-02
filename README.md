@@ -6,7 +6,7 @@
 
 ## 使用
 
-从工作流产物下载对应平台二进制，或使用 Go 1.26 构建：
+从 [GitHub Actions](https://github.com/harveyxiacn/claude-accounts/actions) 成功的工作流产物下载对应平台二进制，解压后重命名为 `claude-accounts`（Windows 为 `claude-accounts.exe`），放入已有 PATH 目录，或直接使用完整路径运行。macOS/Linux 首次使用需执行 `chmod +x claude-accounts`。也可使用 Go 1.26 构建：
 
 ```sh
 go build -o claude-accounts ./cmd/claude-accounts
@@ -22,6 +22,8 @@ claude-accounts use personal
 ```
 
 `login work` 在临时私有配置目录中启动官方登录，成功后导入账户字段；临时配置只传给子进程，不修改父进程环境，也不让登录流程改写已有 hooks 和共享配置。
+
+没有现成登录时，直接从 `claude-accounts login personal` 开始。每个账号只需完成首次浏览器授权；普通切换不调用登出。官方令牌已失效时，可用同一个名称重新执行 `login`。
 
 切换后回到原项目目录，重新启动 Claude：
 
@@ -49,6 +51,8 @@ claude --resume
 
 账户快照含敏感登录材料，采用明文存储，与官方 Linux 文件凭据存储类似；这不是加密保险库。POSIX 目录／文件权限为 0700／0600，Windows 使用当前用户 ACL。不要将快照提交到版本库或分享。
 
+快照保存在 `~/.claude-accounts/<配置标识>/accounts.json`，不同 Claude 配置分开管理。`remove` 只删除工具快照，不登出当前 Claude 账号。登录临时目录在成功、取消或失败后清理；清理失败会显示目录位置。使用现有 `CLAUDE_CONFIG_DIR` 时应始终从相同环境运行本工具。
+
 环境覆盖变量会保留；修改操作会提示相关变量名称，不打印值。已有 API key、自定义接口或云供应商环境变量可能覆盖所选订阅身份。
 
 提示只检查进程环境变量，不检查 `settings.json` 中的 `env` 或 `apiKeyHelper`。启动后使用 Claude 的 `/status` 确认当前身份与认证方式；这些配置也需手动核对。
@@ -61,4 +65,4 @@ claude --resume
 
 具体证据与已知问题见 [开源参考](docs/references.md)。平台自动化与真实账户验证的边界见 [兼容性说明](docs/compatibility.md)。没有执行真实多账户浏览器授权或线上刷新验证。CI 负责三个平台的测试、静态检查及六种目标的二进制构建。
 
-许可证：[MIT](LICENSE)。
+许可证：[MIT](LICENSE)。Unicode 路径规范化使用 Go 官方 `golang.org/x/text`，许可证见 [第三方声明](THIRD_PARTY_LICENSES.txt)。
