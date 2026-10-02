@@ -1,3 +1,7 @@
 /dist/
 *.exe
 coverage.out
+/clauflip
+.credentials.json
+.claude.json
+.clauflip/

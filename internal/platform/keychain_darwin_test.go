@@ -54,6 +54,11 @@ func isolatedKeychainFixture(t *testing.T, s *keychainStore) {
 	}
 	s.testKeychain = path
 	s.testSeed = func() error {
+		// Exercise a modern explicit Apple partition with a known fake password.
+		cmd := exec.Command("/usr/bin/security", "set-generic-password-partition-list", "-a", s.p.KeychainAccount, "-s", s.p.KeychainService, "-S", "apple-tool:,apple:", "-k", password, path)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("fake partition setup: %v: %s", err, output)
+		}
 		return nativeKeychainFixtureOwner(s.p.KeychainService, s.p.KeychainAccount, path, password)
 	}
 }

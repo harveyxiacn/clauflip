@@ -50,7 +50,7 @@ jobs:
           mkdir -p dist
           suffix=''
           if [ "$GOOS" = windows ]; then suffix='.exe'; fi
-          go build -trimpath -o "dist/clauflip-$GOOS-$GOARCH$suffix" ./cmd/clauflip
+          go build -trimpath -ldflags='-s -w' -o "dist/clauflip-$GOOS-$GOARCH$suffix" ./cmd/clauflip
       - uses: actions/upload-artifact@v7
         with:
           name: clauflip-${{ matrix.target.goos }}-${{ matrix.goarch }}
