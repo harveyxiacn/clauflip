@@ -2,12 +2,13 @@ package platform
 
 import (
 	"bytes"
+	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
@@ -104,20 +105,20 @@ func TestRejectLinks(t *testing.T) {
 	}
 }
 
-func TestLargeKeychainWriteUsesStdin(t *testing.T) {
-	data := bytes.Repeat([]byte("x"), 10000)
-	c := keychainWriteCommand("service", "account", data)
-	if c.Path != "/usr/bin/osascript" {
-		t.Fatal("large credential must use native Security bridge")
+func TestSmallKeychainWriteUsesStdin(t *testing.T) {
+	data := bytes.Repeat([]byte("x"), 100)
+	c := securityWriteCommand(context.Background(), "service", "account", data)
+	if c.Path != "/usr/bin/security" {
+		t.Fatal("small credential must use security stdin")
 	}
 	for _, a := range c.Args {
-		if strings.Contains(a, string(data)) {
+		if bytes.Contains([]byte(a), data) {
 			t.Fatal("secret in argv")
 		}
 	}
 	got, err := io.ReadAll(c.Stdin)
-	if err != nil || !bytes.Equal(got, data) {
-		t.Fatal("stdin payload differs", err)
+	if err != nil || !bytes.Contains(got, []byte(hex.EncodeToString(data))) {
+		t.Fatal("stdin payload missing", err)
 	}
 }
 

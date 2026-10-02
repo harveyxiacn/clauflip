@@ -260,40 +260,11 @@ func securityQuote(s string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`
 }
 
-// The native Security bridge handles large MCP/plugin credential objects without
-// the security CLI's fixed interactive input buffer. Credential bytes enter only
-// through stdin. Service/account arguments contain no tokens.
-const keychainWriteScript = `ObjC.import('Foundation'); ObjC.import('Security');
-function run(argv) {
- var data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
- var service = $(argv[0]).dataUsingEncoding($.NSUTF8StringEncoding);
- var account = $(argv[1]).dataUsingEncoding($.NSUTF8StringEncoding);
- var item = Ref();
- var status;
- try {
-   status = Number($.SecKeychainFindGenericPassword(null, Number(service.length), argv[0], Number(account.length), argv[1], null, null, item));
- } catch (e) { throw new Error('Legacy Keychain item lookup bridge failed: ' + e.message); }
- if (status !== 0) throw new Error('Existing Keychain item lookup failed (' + status + ')');
- // Match security -U's legacy content-only update. SecItemUpdate may recreate
- // access policy under this host; changing the item's ACL is not authorized.
- try {
-   status = Number($.SecKeychainItemModifyContent(item[0], null, Number(data.length), data.bytes));
- } catch (e) { throw new Error('Legacy Keychain content update bridge failed: ' + e.message); }
- if (status !== 0) throw new Error('Keychain write failed (' + status + ')');
-}`
-
-func keychainWriteCommand(service, account string, b []byte) *exec.Cmd {
-	return keychainWriteCommandContext(context.Background(), service, account, b)
-}
-func keychainWriteCommandContext(ctx context.Context, service, account string, b []byte) *exec.Cmd {
+// Credentials enter security only through stdin; its interactive line is bounded.
+func securityWriteCommand(ctx context.Context, service, account string, b []byte) *exec.Cmd {
 	line := "add-generic-password -U -a " + securityQuote(account) + " -s " + securityQuote(service) + " -X " + hex.EncodeToString(b) + "\n"
-	if len(line) <= 4032 {
-		c := exec.CommandContext(ctx, "/usr/bin/security", "-i")
-		c.Stdin = strings.NewReader(line)
-		return c
-	}
-	c := exec.CommandContext(ctx, "/usr/bin/osascript", "-l", "JavaScript", "-e", keychainWriteScript, service, account)
-	c.Stdin = bytes.NewReader(b)
+	c := exec.CommandContext(ctx, "/usr/bin/security", "-i")
+	c.Stdin = strings.NewReader(line)
 	return c
 }
 func (s *keychainStore) Write(b []byte) error {
@@ -355,10 +326,42 @@ func (s *keychainStore) Write(b []byte) error {
 func (s *keychainStore) writeKeychain(b []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c := keychainWriteCommandContext(ctx, s.p.KeychainService, s.p.KeychainAccount, b)
-	if err := c.Run(); err != nil {
-		return errors.New("macOS Keychain credential write failed")
+	lineLength := len("add-generic-password -U -a ") + len(securityQuote(s.p.KeychainAccount)) + len(" -s ") + len(securityQuote(s.p.KeychainService)) + len(" -X ") + hex.EncodedLen(len(b)) + 1
+	if lineLength <= 4032 {
+		if err := securityWriteCommand(ctx, s.p.KeychainService, s.p.KeychainAccount, b).Run(); err != nil {
+			return errors.New("macOS Keychain credential write failed")
+		}
+	} else {
+		_, err := s.keychainRead()
+		created := false
+		if errors.Is(err, os.ErrNotExist) {
+			executable, err := os.Executable()
+			if err != nil {
+				return errors.New("cannot resolve native Keychain writer")
+			}
+			line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T " + securityQuote(executable) + " -X 7b7d\n"
+			if len(line) > 4032 {
+				return errors.New("native Keychain seed command exceeds safe size")
+			}
+			seed := exec.CommandContext(ctx, "/usr/bin/security", "-i")
+			seed.Stdin = strings.NewReader(line)
+			if err := seed.Run(); err != nil {
+				return errors.New("cannot create native Keychain credential item")
+			}
+			created = true
+		} else if err != nil {
+			return err
+		}
+		if err := nativeKeychainWrite(s.p.KeychainService, s.p.KeychainAccount, b); err != nil {
+			if created {
+				if cleanupErr := s.deleteKeychain(); cleanupErr != nil {
+					return errors.New("native Keychain write and seed cleanup failed")
+				}
+			}
+			return err
+		}
 	}
+
 	got, err := s.keychainRead()
 	if err != nil {
 		return err

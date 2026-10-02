@@ -1,10 +1,9 @@
-//go:build darwin
+//go:build darwin && cgo
 
 package platform
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -29,9 +28,13 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 		}
 	})
 	small := []byte(`{"claudeAiOauth":{"accessToken":"first"}}`)
-	// Authorize only these two stable system binaries on this invented test
-	// item. The production adapter never changes trusted applications.
-	line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T /usr/bin/osascript -X " + hex.EncodeToString(small) + "\n"
+	// Authorize only security and this test executable on this invented item.
+	// The production adapter preserves existing items' trusted applications.
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T " + securityQuote(executable) + " -X " + hex.EncodeToString(small) + "\n"
 	c := exec.Command("/usr/bin/security", "-i")
 	c.Stdin = strings.NewReader(line)
 	if output, err := c.CombinedOutput(); err != nil {
@@ -42,12 +45,7 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	}
 	b := []byte(`{"claudeAiOauth":{"accessToken":"fixture"},"mcpOAuth":{"fixture":"` + strings.Repeat("x", 15000) + `"}}`)
 	if err := s.Write(b); err != nil {
-		// This unique test service contains only invented fixture tokens. Preserve
-		// native diagnostics here without changing production error redaction.
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		output, diagnosticErr := keychainWriteCommandContext(ctx, s.p.KeychainService, s.p.KeychainAccount, b).CombinedOutput()
-		t.Fatalf("%v; fixture-only native diagnostic: %v: %s", err, diagnosticErr, output)
+		t.Fatal(err)
 	}
 	got, err := s.Read()
 	if err != nil {
@@ -103,6 +101,26 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 	preserved, err = os.ReadFile(s.p.CredentialFile)
 	if err != nil || !bytes.Contains(preserved, []byte("fileOnly")) {
 		t.Fatal("recovery lost fallback shared data", err)
+	}
+}
+
+func TestKeychainNewLargeRoundTrip(t *testing.T) {
+	if os.Getenv("CLAUDE_ACCOUNTS_KEYCHAIN_TEST") != "1" && os.Getenv("CI") != "true" {
+		t.Skip("requires unlocked test Keychain")
+	}
+	s := &keychainStore{p: Paths{CredentialFile: filepath.Join(t.TempDir(), "absent.json"), KeychainService: fmt.Sprintf("claude-accounts-new-large-test-%d", time.Now().UnixNano()), KeychainAccount: platformUsername()}}
+	t.Cleanup(func() {
+		if err := s.Delete(); err != nil {
+			t.Error(err)
+		}
+	})
+	data := []byte(`{"claudeAiOauth":{"accessToken":"new-fixture"},"mcpOAuth":{"fixture":"` + strings.Repeat("x", 15000) + `"}}`)
+	if err := s.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Read()
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatal("new large native item cannot be read through official security CLI", err)
 	}
 }
 

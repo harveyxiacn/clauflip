@@ -21,11 +21,20 @@ jobs:
       - run: go build ./cmd/claude-accounts
   binaries:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.target.runner }}
     strategy:
       matrix:
-        goos: [windows, darwin, linux]
         goarch: [amd64, arm64]
+        target:
+          - goos: windows
+            runner: ubuntu-latest
+            cgo: '0'
+          - goos: linux
+            runner: ubuntu-latest
+            cgo: '0'
+          - goos: darwin
+            runner: macos-latest
+            cgo: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -34,9 +43,9 @@ jobs:
       - name: Build
         shell: bash
         env:
-          GOOS: ${{ matrix.goos }}
+          GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
+          CGO_ENABLED: ${{ matrix.target.cgo }}
         run: |
           mkdir -p dist
           suffix=''
@@ -44,6 +53,6 @@ jobs:
           go build -trimpath -o "dist/claude-accounts-$GOOS-$GOARCH$suffix" ./cmd/claude-accounts
       - uses: actions/upload-artifact@v7
         with:
-          name: claude-accounts-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: claude-accounts-${{ matrix.target.goos }}-${{ matrix.goarch }}
           path: dist/*
           if-no-files-found: error
