@@ -269,14 +269,15 @@ function run(argv) {
  query.setObjectForKey(ObjC.castRefToObject($.kSecClassGenericPassword), ObjC.castRefToObject($.kSecClass));
  query.setObjectForKey($(argv[0]), ObjC.castRefToObject($.kSecAttrService));
  query.setObjectForKey($(argv[1]), ObjC.castRefToObject($.kSecAttrAccount));
- var attributes = $.NSMutableDictionary.alloc.init;
  var data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
- attributes.setObjectForKey(data, ObjC.castRefToObject($.kSecValueData));
- var status = Number($.SecItemUpdate(query, attributes));
- if (status === -25300) {
-   query.setObjectForKey(data, ObjC.castRefToObject($.kSecValueData));
-   status = Number($.SecItemAdd(query, null));
- }
+ query.setObjectForKey($.NSNumber.numberWithBool(true), ObjC.castRefToObject($.kSecReturnRef));
+ query.setObjectForKey(ObjC.castRefToObject($.kSecMatchLimitOne), ObjC.castRefToObject($.kSecMatchLimit));
+ var item = Ref();
+ var status = Number($.SecItemCopyMatching(query, item));
+ if (status !== 0) throw new Error('Existing Keychain item lookup failed (' + status + ')');
+ // Match security -U's legacy content-only update. SecItemUpdate may recreate
+ // access policy under this host; changing the item's ACL is not authorized.
+ status = Number($.SecKeychainItemModifyContent(item[0], null, Number(data.length), data.bytes));
  if (status !== 0) throw new Error('Keychain write failed (' + status + ')');
 }`
 
@@ -324,6 +325,11 @@ func (s *keychainStore) Write(b []byte) error {
 		if err != nil {
 			return err
 		}
+	}
+	// Keep the backend Claude already selected. A file fallback often means
+	// Keychain is unavailable (for example SSH); switching must not migrate it.
+	if errors.Is(previousErr, os.ErrNotExist) && fallbackErr == nil {
+		return (&fileStore{s.p.CredentialFile}).Write(updatedFallback)
 	}
 	if err := s.writeKeychain(b); err != nil {
 		return err

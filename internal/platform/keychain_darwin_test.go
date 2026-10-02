@@ -5,8 +5,10 @@ package platform
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,6 +29,14 @@ func TestKeychainLargeRoundTrip(t *testing.T) {
 		}
 	})
 	small := []byte(`{"claudeAiOauth":{"accessToken":"first"}}`)
+	// Authorize only these two stable system binaries on this invented test
+	// item. The production adapter never changes trusted applications.
+	line := "add-generic-password -a " + securityQuote(s.p.KeychainAccount) + " -s " + securityQuote(s.p.KeychainService) + " -T /usr/bin/security -T /usr/bin/osascript -X " + hex.EncodeToString(small) + "\n"
+	c := exec.Command("/usr/bin/security", "-i")
+	c.Stdin = strings.NewReader(line)
+	if output, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("fixture Keychain creation: %v: %s", err, output)
+	}
 	if err := s.Write(small); err != nil {
 		t.Fatal(err)
 	}
