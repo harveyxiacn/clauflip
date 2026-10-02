@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -133,5 +134,30 @@ func TestRecoveryAccountPatch(t *testing.T) {
 	}
 	if _, err := recoverAccountPayload([]byte(`{"claudeAiOauth":{"accessToken":"newer"}}`), before, after); err == nil {
 		t.Fatal("accepted unknown credential generation")
+	}
+}
+
+func TestVaultBindingUsesEffectiveBackend(t *testing.T) {
+	home := t.TempDir()
+	env := map[string]string{"USER": "shell-one"}
+	lookup := func(k string) (string, bool) { v, ok := env[k]; return v, ok }
+	first, err := ResolvePaths(home, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env["USER"] = "shell-two"
+	env["CLAUDE_SECURESTORAGE_CONFIG_DIR"] = "different-keychain"
+	second, err := ResolvePaths(home, lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "darwin" {
+		if first.StateDir == second.StateDir {
+			t.Fatal("macOS Keychain binding should affect vault")
+		}
+	} else {
+		if first.StateDir != second.StateDir {
+			t.Fatal("nonmac vault should not depend on irrelevant Keychain environment")
+		}
 	}
 }

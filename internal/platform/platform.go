@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -72,7 +73,11 @@ func ResolvePaths(home string, lookup func(string) (string, bool)) (Paths, error
 	if account == "" {
 		account = "claude-code-user"
 	}
-	binding := sha256.Sum256([]byte(config + "\x00" + identity + "\x00" + service + "\x00" + account))
+	backendBinding := config + "\x00" + identity
+	if runtime.GOOS == "darwin" {
+		backendBinding += "\x00" + service + "\x00" + account
+	}
+	binding := sha256.Sum256([]byte(backendBinding))
 	return Paths{config, identity, filepath.Join(config, ".credentials.json"), filepath.Join(home, ".claude-accounts", hex.EncodeToString(binding[:])[:16]), service, account}, nil
 }
 
@@ -261,15 +266,15 @@ func securityQuote(s string) string {
 const keychainWriteScript = `ObjC.import('Foundation'); ObjC.import('Security');
 function run(argv) {
  var query = $.NSMutableDictionary.alloc.init;
- query.setObjectForKey(ObjC.castRef($.kSecClassGenericPassword), ObjC.castRef($.kSecClass));
- query.setObjectForKey($(argv[0]), ObjC.castRef($.kSecAttrService));
- query.setObjectForKey($(argv[1]), ObjC.castRef($.kSecAttrAccount));
+ query.setObjectForKey(ObjC.castRefToObject($.kSecClassGenericPassword), ObjC.castRefToObject($.kSecClass));
+ query.setObjectForKey($(argv[0]), ObjC.castRefToObject($.kSecAttrService));
+ query.setObjectForKey($(argv[1]), ObjC.castRefToObject($.kSecAttrAccount));
  var attributes = $.NSMutableDictionary.alloc.init;
  var data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
- attributes.setObjectForKey(data, ObjC.castRef($.kSecValueData));
+ attributes.setObjectForKey(data, ObjC.castRefToObject($.kSecValueData));
  var status = Number($.SecItemUpdate(query, attributes));
  if (status === -25300) {
-   query.setObjectForKey(data, ObjC.castRef($.kSecValueData));
+   query.setObjectForKey(data, ObjC.castRefToObject($.kSecValueData));
    status = Number($.SecItemAdd(query, null));
  }
  if (status !== 0) throw new Error('Keychain write failed (' + status + ')');
@@ -491,6 +496,15 @@ func RunLogin(configDir string) error {
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
+	return runLoginCommand(c)
+}
+
+func runLoginCommand(c *exec.Cmd) error {
+	// The attached child receives console Ctrl-C too. Keep the waiting parent
+	// alive until it returns so the caller can clean its temporary login state.
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt)
+	defer signal.Stop(interrupts)
 	return c.Run()
 }
 

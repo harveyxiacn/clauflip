@@ -333,6 +333,17 @@ func TestFirstLoginWithoutExistingCredentials(t *testing.T) {
 		t.Fatal("first account not activated")
 	}
 }
+
+func TestLoginTreatsNullAccountFieldsAsSignedOut(t *testing.T) {
+	e, c := fixture(t)
+	c.data = []byte(`{"claudeAiOauth":null,"trustedDeviceToken":null,"mcpOAuth":{"keep":true}}`)
+	must(t, os.WriteFile(e.Paths.IdentityFile, []byte(`{"oauthAccount":null,"theme":"dark"}`), 0600))
+	fakeLogin(t, e, "a", false)
+	must(t, e.Login("personal"))
+	if _, ok := rawMap(t, c.data)["mcpOAuth"]; !ok {
+		t.Fatal("lost shared MCP credentials")
+	}
+}
 func TestCorruptJournalCannotOverwriteNewLiveCredentials(t *testing.T) {
 	e, c := fixture(t)
 	must(t, e.Save("personal"))

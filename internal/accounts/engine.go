@@ -165,6 +165,14 @@ func jsonString(m map[string]json.RawMessage, k string) string {
 	_ = json.Unmarshal(m[k], &s)
 	return s
 }
+
+func accountField(m map[string]json.RawMessage, key string) json.RawMessage {
+	value := m[key]
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return nil
+	}
+	return value
+}
 func (s snapshot) key() (string, error) {
 	m, err := object(s.Identity)
 	if err != nil {
@@ -241,7 +249,7 @@ func (e *Engine) capture() (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
-	return snapshot{OAuth: creds["claudeAiOauth"], Trusted: creds["trustedDeviceToken"], Identity: identity["oauthAccount"], SavedAt: time.Now().UTC()}, nil
+	return snapshot{OAuth: accountField(creds, "claudeAiOauth"), Trusted: accountField(creds, "trustedDeviceToken"), Identity: accountField(identity, "oauthAccount"), SavedAt: time.Now().UTC()}, nil
 }
 func (e *Engine) loadState() (state, error) {
 	s := state{Version: 1, Accounts: map[string]snapshot{}}
@@ -531,7 +539,7 @@ func (e *Engine) rollback(j journal) error {
 	if err != nil {
 		return err
 	}
-	if !allowedField(identity["oauthAccount"], j.Before.Identity, j.After.Identity) {
+	if !allowedField(accountField(identity, "oauthAccount"), j.Before.Identity, j.After.Identity) {
 		return errors.New("identity changed after interruption; refusing to overwrite newer login")
 	}
 	if recoverer, ok := e.Credentials.(interface{ RecoverAccount([]byte, []byte) error }); ok {
