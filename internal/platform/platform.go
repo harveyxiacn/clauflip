@@ -261,15 +261,15 @@ func securityQuote(s string) string {
 const keychainWriteScript = `ObjC.import('Foundation'); ObjC.import('Security');
 function run(argv) {
  var query = $.NSMutableDictionary.alloc.init;
- query.setObjectForKey($.kSecClassGenericPassword, $.kSecClass);
- query.setObjectForKey($(argv[0]), $.kSecAttrService);
- query.setObjectForKey($(argv[1]), $.kSecAttrAccount);
+ query.setObjectForKey(ObjC.castRef($.kSecClassGenericPassword), ObjC.castRef($.kSecClass));
+ query.setObjectForKey($(argv[0]), ObjC.castRef($.kSecAttrService));
+ query.setObjectForKey($(argv[1]), ObjC.castRef($.kSecAttrAccount));
  var attributes = $.NSMutableDictionary.alloc.init;
  var data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
- attributes.setObjectForKey(data, $.kSecValueData);
+ attributes.setObjectForKey(data, ObjC.castRef($.kSecValueData));
  var status = Number($.SecItemUpdate(query, attributes));
  if (status === -25300) {
-   query.setObjectForKey(data, $.kSecValueData);
+   query.setObjectForKey(data, ObjC.castRef($.kSecValueData));
    status = Number($.SecItemAdd(query, null));
  }
  if (status !== 0) throw new Error('Keychain write failed (' + status + ')');

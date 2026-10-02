@@ -98,7 +98,7 @@ func pidAlive(pid int) (bool, error) {
 }
 func scanClaudeProcesses() error {
 	// Return only a boolean; command lines and possible embedded secrets never leave this child.
-	script := `$ErrorActionPreference='Stop'; $found=Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^claude(\.exe)?$' -or ($_.Name -match '^node(\.exe)?$' -and $_.CommandLine -match '[/\\]@anthropic-ai[/\\]claude-code[/\\].*(cli\.js|cli-wrapper\.cjs)') }; if($found){'active'}else{'idle'}`
+	script := powershellModulePrelude + `$ErrorActionPreference='Stop'; $found=Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^claude(\.exe)?$' -or ($_.Name -match '^node(\.exe)?$' -and $_.CommandLine -match '[/\\]@anthropic-ai[/\\]claude-code[/\\].*(cli\.js|cli-wrapper\.cjs)') }; if($found){'active'}else{'idle'}`
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	b, e := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output()
@@ -110,6 +110,8 @@ func scanClaudeProcesses() error {
 	}
 	return nil
 }
+
+const powershellModulePrelude = `$env:PSModulePath=Join-Path $PSHOME 'Modules'; `
 
 func loginCommand() *exec.Cmd {
 	// npm installations commonly expose claude.cmd; Windows needs its command interpreter.

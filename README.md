@@ -9,7 +9,9 @@
 从 [GitHub Actions](https://github.com/harveyxiacn/claude-accounts/actions) 成功的工作流产物下载对应平台二进制，解压后重命名为 `claude-accounts`（Windows 为 `claude-accounts.exe`），放入已有 PATH 目录，或直接使用完整路径运行。macOS/Linux 首次使用需执行 `chmod +x claude-accounts`。也可使用 Go 1.26 构建：
 
 ```sh
-go build -o claude-accounts ./cmd/claude-accounts
+go build -buildvcs=false -o claude-accounts ./cmd/claude-accounts
+# Windows:
+go build -buildvcs=false -o claude-accounts.exe ./cmd/claude-accounts
 ```
 
 已有个人账户登录时，先退出 Claude Code，再执行：
