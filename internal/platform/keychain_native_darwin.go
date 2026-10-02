@@ -195,8 +195,26 @@ static OSStatus clauflip_read(const char *service, const char *account, const ch
 }
 
 static OSStatus clauflip_fixture_partition(SecAccessRef access) {
-    const void *ids[] = {CFSTR("apple-tool:"), CFSTR("apple:")};
-    CFArrayRef values = CFArrayCreate(kCFAllocatorDefault, ids, 2, &kCFTypeArrayCallBacks);
+    SecCodeRef code = NULL; CFDictionaryRef info = NULL;
+    OSStatus signing = SecCodeCopySelf(kSecCSDefaultFlags, &code);
+    if (signing == errSecSuccess) signing = SecCodeCopySigningInformation(code, kSecCSSigningInformation, &info);
+    if (code) CFRelease(code);
+    if (signing != errSecSuccess) { if (info) CFRelease(info); return signing; }
+    CFDataRef hash = CFDictionaryGetValue(info, kSecCodeInfoUnique);
+    if (!hash || CFGetTypeID(hash) != CFDataGetTypeID() || CFDataGetLength(hash) > 64) { CFRelease(info); return errSecParam; }
+    char caller[7 + 128 + 1] = "cdhash:";
+    const char digits[] = "0123456789abcdef";
+    const UInt8 *hashBytes = CFDataGetBytePtr(hash);
+    CFIndex hashLength = CFDataGetLength(hash);
+    if (!hashLength) { CFRelease(info); return errSecParam; }
+    for (CFIndex n = 0; n < hashLength; n++) { caller[7+n*2] = digits[hashBytes[n] >> 4]; caller[7+n*2+1] = digits[hashBytes[n] & 15]; }
+    caller[7+hashLength*2] = 0;
+    CFStringRef callerPartition = CFStringCreateWithCString(kCFAllocatorDefault, caller, kCFStringEncodingASCII);
+    CFRelease(info);
+    if (!callerPartition) return errSecAllocate;
+    const void *ids[] = {CFSTR("apple-tool:"), CFSTR("apple:"), callerPartition};
+    CFArrayRef values = CFArrayCreate(kCFAllocatorDefault, ids, 3, &kCFTypeArrayCallBacks);
+    CFRelease(callerPartition);
     const void *keys[] = {CFSTR("Partitions")}; const void *dictValues[] = {values};
     CFDictionaryRef dict = values ? CFDictionaryCreate(kCFAllocatorDefault, keys, dictValues, 1,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks) : NULL;
